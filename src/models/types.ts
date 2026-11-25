@@ -14,7 +14,7 @@ export type CastPatchT = {
 }
 
 export type FilmT = {
-    _id?:ObjectId,
+    _id?: ObjectId,
     name: string,
     director: string,
     runtime: number,

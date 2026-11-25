@@ -15,7 +15,7 @@ const checkActoresExisten = async (actores: ObjectId[]) => {
 }
 
 export const resolvers = {
-    Query:{
+    Query: {
         peliculas: async () => {
             const collection = getPeliculasCollection();
 
