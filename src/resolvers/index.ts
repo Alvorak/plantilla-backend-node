@@ -2,15 +2,12 @@ import { getActoresCollection, getPeliculasCollection } from "../config/db.js";
 import { ObjectId } from "mongodb";
 import type { CastPatchT, CastT, FilmPatchT, FilmT } from "../models/types.js";
 
-type PeliculaInputArgs = Omit<FilmT, "_id" | "cast"> & { cast: string[] };
-type PeliculaPatchArgs = Omit<FilmPatchT, "cast"> & { cast?: string[] };
-
 const checkActoresExisten = async (actores: ObjectId[]) => {
     const collection = getActoresCollection();
     const actoresQueExisten = await collection.find({ _id: { $in: actores } }).toArray();
-    const idsUnicos = new Set(actores.map((actor) => actor.toHexString()));
-    if (actoresQueExisten.length !== idsUnicos.size) {
-        throw new Error("Algunos actores no existen")
+
+    if (actoresQueExisten.length !== actores.length) {
+        throw new Error("Algunos actores no existen");
     }
 }
 
@@ -37,41 +34,46 @@ export const resolvers = {
         },
         actor: async (_: unknown, args: { id: string }) => {
             const collection = getActoresCollection();
-            return await collection.findOne({ _id: new ObjectId(args.id) })
+            return await collection.findOne({ _id: new ObjectId(args.id) });
         }
     },
     Mutation: {
-        crearPelicula: async (_: unknown, args: { input: PeliculaInputArgs }) => {
+        crearPelicula: async (_: unknown, args: { input: FilmT }) => {
             const collection = getPeliculasCollection();
-            const cast = args.input.cast.map((idActor) => new ObjectId(idActor)); // Convertir los IDs de actores a ObjectId
-            await checkActoresExisten(cast);
 
             const nuevaPeli: FilmT = {
                 ...args.input,
-                cast
+                cast: args.input.cast.map(idActor => new ObjectId(idActor as string))
             }
+
+            await checkActoresExisten(nuevaPeli.cast as ObjectId[]);
 
             const insertada = await collection.insertOne(nuevaPeli);
 
-            return collection.findOne({
+            const nuevaPeliConId = await collection.findOne({
                 _id: insertada.insertedId
             });
+
+            return nuevaPeliConId;
         },
-        cambiarPelicula: async (_: unknown, args: { id: string, input: PeliculaPatchArgs }) => {
+        cambiarPelicula: async (_: unknown, args: { id: string, input: FilmPatchT }) => {
             const collection = getPeliculasCollection();
             const id = new ObjectId(args.id);
-            const { cast, ...camposPelicula } = args.input;
-            const cambios: FilmPatchT = { ...camposPelicula };
 
-            if (cast !== undefined) {
-                const idsActores = cast.map((idActor) => new ObjectId(idActor));
-                await checkActoresExisten(idsActores);
-                cambios.cast = idsActores;
+            if (args.input.cast) {
+                await checkActoresExisten(
+                    args.input.cast.map(idActor => new ObjectId(idActor as string))
+                );
             }
 
             return await collection.findOneAndUpdate(
                 { _id: id },
-                { $set: cambios },
+                {
+                    $set: args.input.cast ? {
+                        ...args.input,
+                        cast: args.input.cast.map(idActor => new ObjectId(idActor as string))
+                    } : args.input
+                },
                 { returnDocument: "after" }
             );
         },
@@ -92,18 +94,21 @@ export const resolvers = {
                 { _id: new ObjectId(args.id) },
                 { $set: args.input },
                 { returnDocument: "after" }
-            )
+            );
         },
         eliminarActor: async (_: unknown, args: { id: string }) => {
             const collection = getActoresCollection();
-            return await collection.findOneAndDelete({ _id: new ObjectId(args.id) })
+            return await collection.findOneAndDelete({ _id: new ObjectId(args.id) });
         }
     },
     Pelicula: {
         cast: async (parent: FilmT) => {
             const collection = getActoresCollection();
 
-            const actores = await collection.find({ _id: { $in: parent.cast as ObjectId[] } }).toArray();
+            const actores = await collection.find({
+                _id: { $in: parent.cast as ObjectId[] }
+            }).toArray();
+
             return actores;
         }
     }
